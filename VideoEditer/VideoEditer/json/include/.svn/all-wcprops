@@ -1,0 +1,65 @@
+K 25
+svn:wc:ra_dav:version-url
+V 96
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/json/include
+END
+json.h
+K 25
+svn:wc:ra_dav:version-url
+V 103
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/json/include/json.h
+END
+assertions.h
+K 25
+svn:wc:ra_dav:version-url
+V 109
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/json/include/assertions.h
+END
+value.h
+K 25
+svn:wc:ra_dav:version-url
+V 104
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/json/include/value.h
+END
+writer.h
+K 25
+svn:wc:ra_dav:version-url
+V 105
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/json/include/writer.h
+END
+features.h
+K 25
+svn:wc:ra_dav:version-url
+V 107
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/json/include/features.h
+END
+reader.h
+K 25
+svn:wc:ra_dav:version-url
+V 105
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/json/include/reader.h
+END
+jsonapi.h
+K 25
+svn:wc:ra_dav:version-url
+V 106
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/json/include/jsonapi.h
+END
+config.h
+K 25
+svn:wc:ra_dav:version-url
+V 105
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/json/include/config.h
+END
+autolink.h
+K 25
+svn:wc:ra_dav:version-url
+V 107
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/json/include/autolink.h
+END
+forwards.h
+K 25
+svn:wc:ra_dav:version-url
+V 107
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/json/include/forwards.h
+END

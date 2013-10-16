@@ -1,0 +1,1115 @@
+#include "mediaeditor.h"
+#include "image_utils.h"
+#import "VideoPlayingView.h"
+
+
+#include "audio_mixer_process.h"
+
+extern "C" {
+#include "libavutil/parseutils.h"
+}
+
+// opengl render function
+void opengl_render(int filter, uint8_t *yuv, int width, int height);
+void opengl_asyn_render(int filter, uint8_t *yuv, int width, int height);
+
+/*--------------------------------------------------------------------------------
+ *
+ *				 class MediaEditor's  function implementation
+ *
+ --------------------------------------------------------------------------------*/
+MediaEditor::MediaEditor()
+    : _startTime(""),
+    _endTime(""),
+    _tmpDir(""),
+    _workStatus(MES_NOTOPEN),
+    _isFirstFrame(1),
+    _cmds(NULL),
+    _threadStatus(0),
+    _threadId(0),
+    _isRunning(0),
+    _pmedia(NULL),
+    _yuvBuf(NULL),
+    _yuvBufLen(0),
+    _curTime(""),
+    _endTime64(0),
+    _rgbBuf(NULL),
+    _rgbBufLen(0),
+    _aqPlayer(NULL)
+{
+	pthread_mutex_init(&_queueMutex, NULL);
+	pthread_mutex_init(&_workMutex, NULL);
+	pthread_mutex_init(&_callMutex, NULL);
+}
+
+MediaEditor::~MediaEditor()
+{
+	CloseThread();      // 退出线程
+	if(_pmedia)
+	{
+		delete _pmedia;
+		_pmedia = NULL;
+	}
+    
+	if (_aqPlayer)
+	{
+		delete _aqPlayer;
+		_aqPlayer = NULL;
+	}
+    
+    if (_yuvBuf)
+    {
+        delete _yuvBuf;
+        _yuvBuf = NULL;
+    }
+    
+    if (_rgbBuf)
+    {
+        delete _rgbBuf;
+        _rgbBuf = NULL;
+    }
+    
+	pthread_mutex_destroy(&_queueMutex);
+	pthread_mutex_destroy(&_workMutex);
+	pthread_mutex_destroy(&_callMutex);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+//									Thread related
+///////////////////////////////////////////////////////////////////////////////////////
+void MediaEditor::Init(void* pview)
+{
+	// other process
+	//
+    _videoView = pview;
+    
+	// create a thread and run
+	OpenThread();
+}
+
+
+void* ThreadProc(void *lParam);		// function declare
+void MediaEditor::OpenThread(void)
+{
+	if(_threadId != 0)
+	{
+		printf("Thread has been created, _threadId = %u \n", _threadId );
+		return;
+	}
+    
+	_isRunning = 1;	// 设置线程标识符
+	pthread_create(&_threadId, NULL, ThreadProc, this);	//
+}
+
+void* ThreadProc(void *lParam)
+{
+	// pthread_detach(pthread_self());		// 线程分离
+	MediaEditor *pb = (MediaEditor *)lParam;
+	pb->_threadStatus = 1;
+	pb->Process();		// 线程转起来了，此时状态处于 MES_NOTOPEN
+	return 0;  // 不关心线程退出状态
+}
+
+/////// 线程函数 ////////
+int MediaEditor::Process(void)
+{
+	int flag;
+	Json::Value act;
+    
+	while(_isRunning == 1)
+	{
+		// printf("Info : Thread running ..... \n");
+		flag = 0;
+		MYLOCK(_queueMutex);
+		if(_cmds.size())
+		{
+			printf(" ######## receive a new command ######## \n");
+			flag = 1;
+			act = _cmds.at(0);
+			_cmds.erase(_cmds.begin() + 0);
+		}
+		MYUNLOCK(_queueMutex);
+        
+        
+		if(flag)
+		{
+			if(act["cmd"].asString().compare("play") == 0)
+			{
+				play();
+			}
+			else if(act["cmd"].asString().compare("pause") == 0)
+			{
+				pause();
+			}
+			else if(act["cmd"].asString().compare("stop") == 0)
+			{
+				stop();
+			}
+			else if(act["cmd"].asString().compare("setperiod") == 0)
+			{
+				stop();
+				_startTime = act["starttm"].asString();
+				_endTime = act["endtm"].asString();
+                av_parse_time(&_endTime64, _endTime.c_str(), 1);
+			}
+            else if(act["cmd"].asString().compare("setcurtime") == 0)
+			{
+				stop();
+				_curTime = act["curtime"].asString();
+			}
+			else if (act["cmd"].asString().compare("cutfile") == 0)
+			{
+                // eg:
+				// _startTime: 00:14:45:123
+				// _endTime  : 02:05:14:001
+				// dualTime  : 01:50:28:878  
+                
+				string dualTime;
+				calcDualTime(dualTime); // dualTime = _endTime - _startTime
+                
+                string destPath = act["destpath"].asString();
+                if (!destPath.compare(""))
+                {
+                    cut(_startTime, dualTime, NULL);
+                }
+                else
+                {
+                    MP4File destFile;
+                    destFile.Open(destPath.c_str());
+                    cut(_startTime, dualTime, &destFile);
+                }
+				
+			}
+            else if (act["cmd"].asString().compare("mergefile") == 0)
+            {
+                string secondPath = act["secondpath"].asString();
+                string destPath = act["destpath"].asString();
+                
+                MP4File secondFile;
+                secondFile.Open(secondPath.c_str());
+                
+                if (destPath.compare(""))
+                {
+                    MP4File destFile;
+                    destFile.Open(destPath.c_str());
+                    merge(&secondFile, &destFile);
+                }
+                else
+                {
+                    merge(&secondFile, NULL);
+                }
+                
+                
+            }
+			else if(act["cmd"].asString().compare("save") == 0)
+			{
+				if (_workStatus==MES_PLAYING || _workStatus==MES_PAUSE)
+				{
+					Stop();
+				}
+				while (1)
+				{
+					usleep(5000);
+					if (_workStatus == MES_IDLE)
+					{
+						break;
+					}
+				}
+				string filePath = act["file"].asString();
+				save2file(filePath, act["width"].asInt(), act["height"].asInt());
+			}
+			
+		}
+        
+        loop();
+	}
+	_threadStatus = 0;
+	return 0;
+}
+
+void MediaEditor::CloseThread(void)
+{
+	if(_threadId == 0)
+	{
+		printf(" Thread is not running !! \n");
+		return;
+	}
+    
+    _isRunning = 0;	// 跳出循环
+    while(_threadStatus)
+	{
+		usleep(1000);	// waiting until thread finish
+	}
+	pthread_join(_threadId, NULL);	// 等待线程结束
+    
+    printf("Thread has been stoped !.... \n");
+	_threadId = 0;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////
+//									Processing related
+///////////////////////////////////////////////////////////////////////////////////////
+//#define HAS_TEST_ADD_ACTION
+
+// Open(...)的可操作前提条件:
+// |-(1) 状态为 MES_NOTOPEN
+//    a. 未打开任何文件
+// |-(2) 状态为 MES_IDLE
+//    b. 已经打开一个文件，需要替换地打开另外一个(丢弃原来加载的那个)
+//    c. cutting、merge、save 一个文件完成，状态回到 MES_IDLE
+//    d. 处于 MES_PLAYING、MES_PAUSE 状态，Stop()后回到 MES_IDLE 状态再打开文件
+
+int MediaEditor::Open(const char *srcPath)
+{
+	// 判断处于 MES_PLAYING / MES_PAUSE 状态的情况
+    MYLOCK(_workMutex);
+    if(_workStatus==MES_PLAYING || _workStatus==MES_PAUSE)
+    {
+        MYUNLOCK(_workMutex);
+        Stop();  // 发送一个stop命令，令状态机回到 MES_IDLE
+    }
+    MYUNLOCK(_workMutex);
+    
+    while (1)
+    {
+        MYLOCK(_workMutex);
+        if (_workStatus==MES_NOTOPEN || _workStatus==MES_IDLE)
+        {
+            MYUNLOCK(_workMutex);
+            break;
+        }
+        MYUNLOCK(_workMutex);
+        
+        // 若处于 MES_SAVING 状态，则等待
+        usleep(5000);
+    }
+    
+    // 开始打开文件
+    MYLOCK(_workMutex);
+    _workStatus = MES_OPENING;
+    string filePath = srcPath;
+    int ret = openfile(filePath);
+    if (ret)
+    {
+        _workStatus = MES_NOTOPEN;	// 打开媒体文件失败
+        printf("Error: open file failed ! \n");
+        MYUNLOCK(_workMutex);
+        return -1;
+    }
+    
+    printf("Info: open file successed ! \n");
+    _workStatus = MES_IDLE;	// 状态机设置为 MES_IDLE
+    _pmedia->GetFormat(&_format);
+    MYUNLOCK(_workMutex);
+    
+    
+    // 若已创建(可能是之前打开了一个媒体文件)，则销毁并重新实例化AQPlayer
+    if(_aqPlayer)
+    {
+        _aqPlayer->AQPlayerUnInit();  // 释放AudioQueue的buffer内存, 如果曾经播放过(AudioQueueStart(...))，则执行
+        delete _aqPlayer;             // 释放"环形"buffer的内存
+        _aqPlayer = NULL;
+    }
+    
+    _aqPlayer = new AQPlayer;
+    if (!_aqPlayer)
+    {
+        printf("Error: Cannot alloc AQPlayer memory ! \n");
+        return -1;
+    }
+    
+    //  如果这个MP4文件没有任何音轨 ？？
+    AQParam aqPlayParam;
+    aqPlayParam.bits_per_sample = _format.audio_bits_per_sample;
+    aqPlayParam.channel_count = _format.audio_channels;
+    aqPlayParam.clock_rate =  _format.audio_sample_rate;
+    
+    _aqPlayer->AQPlayerInit(&aqPlayParam);  // 初始化AuqioQueue对象
+    
+    
+//#ifdef HAS_TEST_ADD_ACTION
+    _vidfilter.Open(_format.video_width, _format.video_height, _format.video_avg_frame_rate, 0);
+    Json::Value param;
+    ActionItem action1("MonochromeFilterAction", "00:00:00", "00:00:03", param, 0);
+    ActionItem action2("NegativeFilterAction", "00:00:03", "00:00:06", param, 0);
+    ActionItem action3("sepia", "00:00:06", "00:00:09", param, 0);
+    _vidfilter.getActionList().Add(action1);
+    _vidfilter.getActionList().Add(action2);
+    _vidfilter.getActionList().Add(action3);
+    _pmedia->SetProcess(&_vidfilter, NULL);
+    
+//#endif //HAS_TEST_ADD_ACTION
+    
+//    MP4File mp4File2;
+//	mp4File2.Open("/Users/leipeilin/Desktop/3.mp4");
+//    
+//    AudioMixerProcess audioMixerProcess;
+//	audioMixerProcess.SetMixerFile(&mp4File2, "00:00:00");
+//	_pmedia->SetProcess(NULL, &audioMixerProcess);
+////    _pmedia->SetProcess(NULL, &_audfilter);
+//    
+//    MP4File saveFile;
+//    saveFile.Open("/Users/leipeilin/Desktop/save.mp4");
+//    _pmedia->Transfer(&saveFile);
+    
+
+    printf(" ##### _width = (%d)   _height = (%d) ##### \n", _format.video_width, _format.video_height);
+    
+    // 申请音视频公用内存
+    // 申请音视频公用内存(yuv, pcm)
+    if (_yuvBuf)
+    {
+        delete _yuvBuf;
+        _yuvBuf = NULL;
+    }
+    _yuvBufLen = _format.video_width * _format.video_height * 3 / 2;
+    _yuvBuf = new uint8_t[_yuvBufLen];
+    if (!_yuvBuf)
+    {
+        printf("Error: Cannot alloc yuv buffer memory ! \n");
+        return -1;
+    }
+    
+    // 申请用于存储rgb图像数据的内存
+    if (_rgbBuf)
+    {
+        delete _rgbBuf;
+        _rgbBuf = NULL;
+    }
+    _rgbBufLen = _format.video_width * _format.video_height * 3;
+    _rgbBuf = new uint8_t[_rgbBufLen];
+    if (!_rgbBuf)
+    {
+        printf("Error: Cannot alloc rgb buffer memory ! \n");
+        return -1;
+    }
+    
+    return 0;
+}
+
+
+int MediaEditor::GetFormat(MediaFormat &mf)
+{
+    MYLOCK(_workMutex);
+	if(_workStatus == MES_NOTOPEN )
+	{
+		mf._isvalid = 0;	// 文件未打开, 值无效
+        MYUNLOCK(_workMutex);
+		return -1;
+	}
+    MYUNLOCK(_workMutex);
+    
+	//copy media format information
+	mf._width 				 = _format.video_width;
+	mf._height 				 = _format.video_height;
+	mf._totaltime 			 = _format.during_time;
+	mf._video_avg_frame_rate = _format.video_avg_frame_rate;
+	mf._audio_sample_rate 	 = _format.audio_sample_rate;
+	mf._audio_channels 		 = _format.audio_channels;
+	mf._audio_bits_per_sample = _format.audio_bits_per_sample;
+    mf._isvalid = 1;
+    
+    printf("_format._width(%d) _format._height(%d)\n", _format.video_width, _format.video_height);
+    
+	return 0;
+}
+
+
+void MediaEditor::SetTempDir(const char *destDir)
+{
+	// _tmpDir = destDir;
+	if (_pmedia)
+    {
+        _pmedia->SetTempDirectory(destDir);   // 有无返回值？
+    }
+}
+
+
+void MediaEditor::Save2File(const char *destPath, int videoWidth, int videoHeight)
+{
+	MYLOCK(_queueMutex);
+	Json::Value a;
+    
+	a["cmd"] = "save";
+	a["file"] = destPath;
+	a["width"] = videoWidth;
+	a["height"] = videoHeight;
+	_cmds.push_back(a);
+	MYUNLOCK(_queueMutex);
+}
+
+
+void MediaEditor::ProgressCallback(int percentage)
+{
+    [this->delegate SaveProgressCallback:percentage];
+}
+
+
+void MediaEditor::AddAction(Json::Value &action, int type)
+{
+	MYLOCK(_callMutex);
+    
+// Video
+    ActionItem action1(action["Name"].asCString(), _startTime.c_str(), _endTime.c_str(), action, type);
+    _vidfilter.getActionList().Add(action1);
+// Audio
+//    ActionItem action1(action["Name"].asCString(), action["starttime"].asCString(), action["endtime"].asCString(), action, type);
+//    _audfilter.getActionList().Add(action1);
+    
+
+    
+    
+//	_vidfilter.getActionList().Add(action, type, _startTime, _endTime);
+//    _audfilter.getAction().Add(action, type, _startTime, _endTime);
+//	_pmedia->SetProcess(_vidacts, _audacts);
+	MYUNLOCK(_callMutex);
+}
+
+
+void MediaEditor::ClearAction(int option)
+{
+	MYLOCK(_callMutex);
+    _vidfilter.getActionList().Clear(option);
+    _audfilter.getActionList().Clear(option);
+	MYUNLOCK(_callMutex);
+}
+
+
+int MediaEditor::GetThumbnail( char *pbuf, int buflen, const char *time, int width, int height)
+{
+    MYLOCK(_workMutex);
+    if (_workStatus == MES_NOTOPEN)
+    {
+        MYUNLOCK(_workMutex);
+        printf("Error: file has not opened ! \n");
+        return -1;
+    }
+    MYUNLOCK(_workMutex);
+
+//////// 会出问题 ？ ///////
+//    MYLOCK(_workMutex);
+//    if (_workStatus == MES_PLAYING || _workStatus == MES_PAUSE)
+//    {
+//        MYUNLOCK(_workMutex);
+//        Stop();
+//    }
+//    MYUNLOCK(_workMutex);
+//    
+//    // 如果处于 MES_PLAYING 或 MES_SAVING，可以获得缩略图嘛？
+//    while(1)
+//    {
+//        MYLOCK(_workMutex);
+//        
+//        if (_workStatus == MES_IDLE)
+//        {
+//            MYUNLOCK(_workMutex);
+//            break;
+//        }
+//        MYUNLOCK(_workMutex);
+//        
+//        usleep(5000);
+//    }
+    
+    return _pmedia->GetThumbnail((uint8_t *)pbuf, buflen, time, width, height);
+}
+
+
+ThunbImgWithBuffer* MediaEditor::GetThumbnailImage(const char* timePos, ThunbImgWithBuffer* imgWithBuffer)
+{
+    imgWithBuffer.buffer = new uint8_t[_rgbBufLen];
+    _pmedia->GetThumbnail((uint8_t *)_yuvBuf, _yuvBufLen, timePos, _format.video_width, _format.video_height);
+    ConvertYV12ToRGB24(_yuvBuf, imgWithBuffer.buffer, _format.video_width, _format.video_height);
+    
+//    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, imgWithBuffer.buffer, _rgbBufLen, NULL);
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGImageRef ir = CGImageCreate(_format.video_width, _format.video_height,
+                                  8, 24, _format.video_width*3, cs,
+                                  kCGImageAlphaNoneSkipFirst, provider,
+                                  NULL, NO, kCGRenderingIntentDefault);
+    CGColorSpaceRelease(cs);
+    CGDataProviderRelease(provider);
+    imgWithBuffer.image = [[UIImage alloc] initWithCGImage:ir scale:1.0 orientation:UIImageOrientationUp];
+    CGImageRelease(ir);
+    
+//    dispatch_async(dispatch_get_main_queue(), ^{});
+    return imgWithBuffer;
+    
+//    [pool drain];
+    
+}
+
+
+void MediaEditor::DisplayFrame(char *time)
+{
+	return;
+}
+
+void MediaEditor::SetPeriod(const char *startTime, const char *endTime)
+{
+	MYLOCK(_queueMutex);
+	Json::Value a;
+    
+	a["cmd"] = "setperiod";
+	a["starttm"] = startTime;
+	a["endtm"] = endTime;
+	_cmds.push_back(a);
+	MYUNLOCK(_queueMutex);
+}
+
+void MediaEditor::SetCurTime(const char *curTime)
+{
+    MYLOCK(_queueMutex);
+	Json::Value a;
+	a["cmd"] = "setcurtime";
+	a["curtime"] = curTime;
+	_cmds.push_back(a);
+	MYUNLOCK(_queueMutex);
+    
+}
+
+void MediaEditor::Cut(const char *destPath)
+{
+    
+    MYLOCK(_queueMutex);
+	Json::Value a;
+    
+	a["cmd"] = "cutfile";
+    a["destpath"] = destPath;
+	_cmds.push_back(a);
+	MYUNLOCK(_queueMutex);
+}
+
+void MediaEditor::Merge(const char *secondPath, const char *destPath)
+{
+    MYLOCK(_queueMutex);
+	Json::Value a;
+    
+	a["cmd"] = "mergefile";
+    a["secondpath"] = secondPath;
+    a["destpath"] = destPath;
+	_cmds.push_back(a);
+	MYUNLOCK(_queueMutex);
+    
+}
+
+void MediaEditor::Play(void)
+{
+	MYLOCK(_queueMutex);
+	Json::Value a;
+    
+	a["cmd"] = "play";
+	_cmds.push_back(a);
+	MYUNLOCK(_queueMutex);
+}
+
+void MediaEditor::Pause(void)
+{
+	MYLOCK(_queueMutex);
+	Json::Value a;
+    
+	a["cmd"] = "pause";
+	_cmds.push_back(a);
+	MYUNLOCK(_queueMutex);
+}
+
+void MediaEditor::Stop(void)
+{
+	MYLOCK(_queueMutex);
+	Json::Value a;
+    
+	a["cmd"] = "stop";
+	_cmds.push_back(a);
+	MYUNLOCK(_queueMutex);
+}
+
+
+
+/*----------------------- private function -----------------------*/
+
+void MediaEditor::play(void)
+{
+    MYLOCK(_workMutex);
+    // 1. MES_NOTOPEN || MES_PLAYING || MES_SAVING 状态，直接返回
+    if (_workStatus == MES_NOTOPEN || _workStatus == MES_PLAYING || _workStatus == MES_SAVING)
+    {
+        MYUNLOCK(_workMutex);
+        return;
+    }
+    // 2. MES_IDLE 状态 (表示可能是未播放过，或者是停止状态)，从|_startTime|处开始播放
+    else if (_workStatus == MES_IDLE)
+    {
+        _workStatus = MES_PLAYING;      // 置状态机状态为 MES_PLAYING
+        _isFirstFrame = 1;
+        MYUNLOCK(_workMutex);
+    }
+    // 3. MES_PAUSE 状态，从暂停的地方继续播放
+    else if (_workStatus == MES_PAUSE)
+    {
+        _workStatus = MES_PLAYING;      // 置状态机状态为 MES_PLAYING
+        MYUNLOCK(_workMutex);
+    }
+    // 3. MES_OPENING 状态，等待处理完成，再播放
+    else    // if (_workStatus == MES_OPENING)
+    {
+        MYUNLOCK(_workMutex);
+        while(1)
+        {
+            // 这里必须要循环加锁与释放锁(让其他线程有机会获得锁)
+            printf("Info: execute play need to waiting until status change to MES_IDLE \n");
+            MYLOCK(_workMutex);
+            if (_workStatus == MES_IDLE)
+            {
+                _workStatus = MES_PLAYING;  // 置状态机状态为 MES_PLAYING
+                MYUNLOCK(_workMutex);
+                break;
+            }
+            MYUNLOCK(_workMutex);
+            
+            usleep(5000);
+            
+        }
+    }
+    
+    _aqPlayer->AQPlayerStartPlay();     // 开始播放音频
+    
+    printf("Info: playing ~~~~~~~~~ \n");
+}
+
+void MediaEditor::pause(void)
+{
+    MYLOCK(_workMutex);
+	if (_workStatus == MES_PLAYING)
+	{
+		_workStatus = MES_PAUSE;
+	}
+    MYUNLOCK(_workMutex);
+    
+//    _aqPlayer->AQPlayerPausePlay();     // 暂停播放音频
+    
+	printf("Info: paused ~~~~~~~~~ \n");
+    
+}
+
+void MediaEditor::stop(void)
+{
+	
+    MYLOCK(_workMutex);
+	if(_workStatus==MES_PLAYING || _workStatus==MES_PAUSE)
+	{
+		_workStatus = MES_IDLE;
+        _isFirstFrame = 1;
+	}
+    MYUNLOCK(_workMutex);
+    
+//    _aqPlayer->AQPlayerStopPlay();
+    printf("Info: stoped ~~~~~~~~~ \n");
+	
+}
+
+
+int MediaEditor::openfile(string &fname)
+{
+    // 若重新打开另外一个mp4，不用delete MP4File对象
+	if(!_pmedia)
+	{
+		_pmedia = new MP4File();
+		if (!_pmedia)
+		{
+			printf("Cannot new MediaFileTemp !!!\n");
+			return -1;
+		}
+	}
+    
+	int ret = _pmedia->Open((const char *)(fname.c_str()));
+    
+    return ret;
+}
+
+
+void MediaEditor::cut(const string& startTime, const string& dualTime, MediaFile* destMp4File)
+{
+    MYLOCK(_workMutex);
+    if (_workStatus==MES_PLAYING || _workStatus==MES_PAUSE)
+    {
+        MYUNLOCK(_workMutex);
+        stop();  
+    }
+    MYUNLOCK(_workMutex);
+    
+    while (1)
+    {
+        MYLOCK(_workMutex);
+        if (_workStatus == MES_IDLE)
+        {
+            MYUNLOCK(_workMutex);
+            break;
+        }
+        MYUNLOCK(_workMutex);
+        usleep(5000);
+    }
+    
+    MYLOCK(_workMutex);
+    _workStatus = MES_SAVING;
+    _pmedia->SetAppCallBack(this);  // 把子类对象指针送给父类指针
+    _pmedia->Cut(startTime.c_str(), dualTime.c_str(), destMp4File);
+    _workStatus = MES_IDLE;
+    MYUNLOCK(_workMutex);
+    
+    // 
+}
+
+
+void MediaEditor::merge(MediaFile* secondFile, MediaFile* destFile)
+{
+    MYLOCK(_workMutex);
+    if (_workStatus==MES_PLAYING || _workStatus==MES_PAUSE)
+    {
+        MYUNLOCK(_workMutex);
+        Stop();
+    }
+    MYUNLOCK(_workMutex);
+    
+    while (1)
+    {
+        MYLOCK(_workMutex);
+        if (_workStatus == MES_IDLE)
+        {
+            MYUNLOCK(_workMutex);
+            break;
+        }
+        MYUNLOCK(_workMutex);
+        usleep(5000);
+    }
+    
+    MYLOCK(_workMutex);
+    _workStatus = MES_SAVING;
+    _pmedia->Merge(secondFile, destFile);
+    _workStatus = MES_IDLE;
+    MYUNLOCK(_workMutex);
+}
+
+int MediaEditor::save2file(string &fname, int width, int height)
+{
+    MP4File tmpFile;
+    tmpFile.Open(fname.c_str());
+    
+    MYLOCK(_workMutex);
+    if (_workStatus==MES_PLAYING || _workStatus==MES_PAUSE)
+    {
+        MYUNLOCK(_workMutex);
+        Stop();
+    }
+    MYUNLOCK(_workMutex);
+    
+    while (1)
+    {
+        MYLOCK(_workMutex);
+        if (_workStatus == MES_IDLE)
+        {
+            MYUNLOCK(_workMutex);
+            break;
+        }
+        MYUNLOCK(_workMutex);
+        usleep(5000);
+    }
+    
+    MYLOCK(_workMutex);
+    _workStatus = MES_SAVING;
+//    _pmedia->Transfer(&tmpFile);
+
+//////////////////////////////////////////////////
+    MP4File mp4File2;
+	mp4File2.Open("/Users/leipeilin/Desktop/3.mp4");
+    mp4File2.SetTempDirectory("/Users/leipeilin/Desktop");
+    
+    AudioMixerProcess audioMixerProcess;
+	audioMixerProcess.SetMixerFile(&mp4File2, "00:00:00");
+	_pmedia->SetProcess(NULL, &audioMixerProcess);
+    //    _pmedia->SetProcess(NULL, &_audfilter);
+    
+    MP4File saveFile;
+    saveFile.Open("/Users/leipeilin/Desktop/save.mp4");
+    _pmedia->Transfer(&saveFile);
+//////////////////////////////////////////////////   
+    
+    _workStatus = MES_IDLE;
+    MYUNLOCK(_workMutex);
+    
+	return 0;
+}
+
+//const char *temPath = "/Users/leipeilin/Desktop/video.yuv";
+//static const char *temPath = "/Users/leipeilin/Desktop/audio.pcm";
+//static FILE *tmpFile = NULL;
+//static bool isCreate = false;
+
+
+void MediaEditor::loop(void)
+{
+    int ret = -1;
+    int64_t sleepTime;
+    int64_t curTime;
+    int type;
+    
+//    if (!isCreate)
+//    {
+//        tmpFile = fopen(temPath, "wb");
+//        isCreate = true;
+//    }
+    
+    static int bufListIndex = 0;    // 表示当前操作结点的Index
+     
+    // 如果当前状态不为 MES_PLAYING 则什么都不做
+    MYLOCK(_workMutex);
+	if(_workStatus == MES_PLAYING)
+    {
+        if (_isFirstFrame)
+        {
+            ret = _pmedia->GetFirstFrame(_yuvBuf, _curTime.c_str(), _yuvBufLen, type);
+            
+            printf("Info:  loop() type = %d \n", type);
+            if (ret == -1)
+            {
+                printf("Error: GetFirstFrame() failed ! \n");
+                MYUNLOCK(_workMutex);
+                return;
+            }
+            
+            if (ret == 0 )
+            {
+                if (type == 0)
+                {
+                    _vidfilter.Display(_yuvBuf, _format.video_width, _format.video_height, 0);
+#ifdef IPHONEOS
+                    [this->delegate PreviewTimeCallback:_curTime.c_str()];
+#else
+//                    PreviewTimeCallback(_videoView, _curTime.c_str());
+#endif
+                }
+                else
+                {
+                    _aqPlayer->Lock();
+                    memcpy(_aqPlayer->_playBufList[bufListIndex], _yuvBuf, _yuvBufLen);
+                    bufListIndex++;
+                    bufListIndex %= kNumberAudioOutDataBuffers;
+                    _aqPlayer->_curAvailableBufferCount++;          // 可用buffer + 1
+                    _aqPlayer->UnLock();
+                }
+                _yuvBufLen = _format.video_width * _format.video_height * 3 / 2;
+            }
+            _isFirstFrame = 0;
+        } // if (_isFirstFrame)
+        else
+        {
+            ret = _pmedia->GetNextFrame(_yuvBuf, _yuvBufLen, type, sleepTime, curTime);
+
+            printf("Info:  loop() type = %d  ret = %d\n", type, ret);
+            if (ret == -1)
+            {
+                printf("Error: GetNextFrame() failed  (has been finish) ! \n");
+                MYUNLOCK(_workMutex);
+                [(__bridge VideoPlayingView *)_videoView stopPlay]; 
+                return;
+            }
+            
+            if (ret == 0)
+            {
+                if (type == 0)
+                {
+                    string timeStr;
+                    int64toString(timeStr, curTime);
+                    if (curTime > _endTime64)
+                    {
+                        MYUNLOCK(_workMutex);
+                        [(__bridge VideoPlayingView *)_videoView stopPlay];
+                        
+                        return;
+                    }
+                    
+                    printf(" ####### Info: loop sleep sleepTime = %lld \n", sleepTime);
+//                    fwrite(_yuvBuf, 1, _yuvBufLen, tmpFile);
+//                    fflush(tmpFile);
+                    _vidfilter.Display(_yuvBuf, _format.video_width, _format.video_height, curTime);
+                    
+#ifdef IPHONEOS         
+                    [this->delegate PreviewTimeCallback:timeStr.c_str()];
+#else
+                    //                    PreviewTimeCallback(_videoView, _curTime.c_str());
+#endif
+                    usleep(sleepTime);
+                }
+                else
+                {
+                    _aqPlayer->Lock();
+                    memcpy(_aqPlayer->_playBufList[bufListIndex], _yuvBuf, _yuvBufLen);
+                    bufListIndex++;
+                    bufListIndex %= kNumberAudioOutDataBuffers;
+                    _aqPlayer->_curAvailableBufferCount++;          // 可用buffer + 1
+                    if (_aqPlayer->_curAvailableBufferCount > kNumberAudioOutDataBuffers)   // 覆盖未被读取的buffer结点了！！
+                    {
+                        _aqPlayer->_curAvailableBufferCount = kNumberAudioOutDataBuffers;
+                    }
+                    _aqPlayer->UnLock();
+                }
+                _yuvBufLen = _format.video_width * _format.video_height * 3 / 2; 
+            }
+        } // if (_isFirstFrame) else ...
+    } // if(_workStatus == MES_PLAYING)
+    MYUNLOCK(_workMutex);
+    return;
+}
+
+
+void MediaEditor::calcDualTime(string& dualTime)
+{
+	string start = _startTime.substr(0,2);
+    string end = _endTime.substr(0,2);
+    int h = atoi(end.c_str()) - atoi(start.c_str()) ;
+    
+    start = _startTime.substr(3,5);
+    end = _endTime.substr(3,5);
+    int m = atoi(end.c_str()) - atoi(start.c_str()) ;
+    if (m < 0)
+    {
+        h -= 1;
+        m += 60;
+    }
+    
+    start = _startTime.substr(6,8);
+    end = _endTime.substr(6,8);
+    int s = atoi(end.c_str()) - atoi(start.c_str()) ;
+    if (s < 0)
+    {
+        m -= 1;
+        s += 60;
+    }
+    
+    start = _startTime.substr(9,12);
+    end = _endTime.substr(9,12);
+    int ms = atoi(end.c_str()) - atoi(start.c_str()) ;
+    if (ms < 0)
+    {
+        s -= 1;
+        ms += 1000;
+    }
+    
+    dualTime = "";
+    char tmp[4] = {0};
+    sprintf(tmp, "%d", h);
+    
+    if (strlen(tmp) == 1)
+    {
+        dualTime = dualTime + "0" + tmp;
+    }
+    else
+    {
+        dualTime = dualTime + tmp;
+    }
+    
+    dualTime += ":";
+    memset(tmp, 0, 4);
+    sprintf(tmp, "%d", m);
+    if (strlen(tmp) == 1)
+    {
+        dualTime = dualTime + "0" + tmp;
+    }
+    else
+    {
+        dualTime = dualTime + tmp;
+    }
+    
+    dualTime += ":";
+    memset(tmp, 0, 4);
+    sprintf(tmp, "%d", s);
+    if (strlen(tmp) == 1)
+    {
+        dualTime = dualTime + "0" + tmp;
+    }
+    else
+    {
+        dualTime = dualTime + tmp;
+    }
+    
+    dualTime += ".";
+    memset(tmp, 0, 4);
+    sprintf(tmp, "%d", ms);
+    
+    cout << tmp << endl;
+    if (strlen(tmp) == 1)
+    {
+        dualTime = dualTime + "00" + tmp;
+    }
+    else if (strlen(tmp) == 2)
+    {
+        dualTime = dualTime + "0" + tmp;
+    }
+    else
+    {
+        dualTime = dualTime + tmp;
+    }
+}
+
+static char* itostr(char *str, int i) //将i转化位字符串存入str
+{
+    sprintf(str, "%d", i);
+    return str;
+}
+
+void MediaEditor::int64toString(string& timeStr, int64_t curTimeUs)
+{
+    curTimeUs /= 1000.0;        // 略去微秒 , 剩下毫秒 11280123 ms
+
+    int h = curTimeUs / 3600000.0;           // 时
+    int m = (curTimeUs / 60000) % 60;        // 分
+    int s = (curTimeUs / 1000) % 60 % 60;    // 秒
+    int ms = curTimeUs % 1000;               // 毫秒
+
+    char tmp[4] = {0};
+    timeStr = "";
+    if (h < 10)
+    {
+        timeStr = timeStr + "0" + itostr(tmp, h);
+    }
+    else
+    {
+        timeStr = timeStr + itostr(tmp, h);
+    }
+
+    memset(tmp, 0, strlen(tmp));
+    if (m < 10)
+    {
+        timeStr = timeStr + ":0" + itostr(tmp, m);
+    }
+    else
+    {
+        timeStr = timeStr + ":" + itostr(tmp, m);
+    }
+
+    memset(tmp, 0, strlen(tmp));
+    if (s < 10)
+    {
+        timeStr = timeStr + ":0" + itostr(tmp, s);
+    }
+    else
+    {
+        timeStr = timeStr + ":" + itostr(tmp, s);
+    }
+
+    memset(tmp, 0, strlen(tmp));
+    if (ms < 10)
+    {
+        timeStr = timeStr + ".00" + itostr(tmp, ms);
+    }
+    else if (ms < 100)
+    {
+        timeStr = timeStr + ".0" + itostr(tmp, ms);
+    }
+    else
+    {
+        timeStr = timeStr + "." + itostr(tmp, ms);
+    }
+}
+
+

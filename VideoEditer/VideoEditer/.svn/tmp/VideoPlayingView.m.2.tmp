@@ -1,0 +1,321 @@
+//
+//  VideoPlayingView.m
+//  VideoEditer
+//
+//  Created by leipeilin on 13-8-7.
+//  Copyright (c) 2013年 liulu. All rights reserved.
+//
+
+#import "VideoPlayingView.h"
+#include "IOSOpenGLView.h"
+
+#define DEF_PLAYBTN_TAG 8121348
+
+@implementation VideoPlayingView
+@synthesize openglView = _openglView;
+
+- (id)initWithFrame:(CGRect)frame
+{
+    self = [super initWithFrame:frame];
+    if (self) {
+        // Initialization code
+        
+        _filePath = @"";
+        _saveFilePath = @"";
+        _beginTime = @"00:00:00.000";
+        _endTime = @"00:00:00.000";
+        _curTime = @"00:00:00.000";
+        
+        // 添加 OpenGL View
+        /****************** OpenGLES ******************/
+        _openglView = [[OpenGLView alloc]initWithFrame:CGRectMake(0, 0, self.frame.size.width, self.frame.size.height)];
+        
+        [_openglView setBackgroundColor:[UIColor redColor]];
+        [self setBackgroundColor:[UIColor blackColor]];
+        [self addSubview:_openglView];      // 添加 openglView
+        [_openglView setOpenglViewMode: OPENGLVIEW_DISPLAY: CGRectMake(0, 0, self.frame.size.width, self.frame.size.height)];
+        /****************** OpenGLES ******************/
+        
+        
+        //播放按钮begin
+        UIButton* btnPlay = [[UIButton alloc] initWithFrame:CGRectMake(self.frame.size.width-50, self.frame.size.height-50, 40, 40)];
+        [btnPlay setImage:[UIImage imageNamed:@"play_normal.png"] forState:UIControlStateNormal];
+        [btnPlay setImage:[UIImage imageNamed:@"play_highlight.png"] forState:UIControlStateHighlighted];
+        [btnPlay addTarget:self action:@selector(btnPlayClicked:) forControlEvents:UIControlEventTouchUpInside];
+        [self addSubview:btnPlay];
+        btnPlay.tag = DEF_PLAYBTN_TAG;
+        //播放按钮end
+        
+        // 1、实例化MediaEditor对象
+        _mediaEditor = new MediaEditor;
+        
+        _mediaEditor->delegate = self;
+        
+        // 2、启动线程
+        _mediaEditor->Init((__bridge void *)self);
+        
+        
+    }
+    return self;
+}
+
+- (void)dealloc
+{
+    if(_thumBuf)
+    {
+        delete _thumBuf;
+        _thumBuf = NULL;
+    }
+    
+    // 销毁对象，释放内存
+    if (_mediaEditor)
+    {
+        delete _mediaEditor;
+        _mediaEditor = NULL;
+    }
+}
+
+#pragma mark -
+#pragma mark setter
+- (void)setFrame:(CGRect)frame
+{
+    [super setFrame:frame];
+    _openglView.frame = CGRectMake(0, 0, self.frame.size.width, self.frame.size.height);
+}
+
+- (void)setFilePath:(NSString *)filePath
+{
+    _filePath = filePath;
+    
+    // 3、打开文件
+    //    string filePath = "/Users/leipeilin/Desktop/1.mp4";
+    //    string filePath = "/Users/leipeilin/Desktop/stone/trunk/testdata/2.mp4";
+    if (_mediaEditor->Open( [self.filePath UTF8String] ) != 0)
+    {
+        printf("Error: Cannot Open Media File !!!!!!! \n");
+    }
+    
+    // 4、获取媒体信息
+    _mediaEditor->GetFormat(_mediaFormat);
+    
+    // 5. 设置时间区间 (设置_startTime和_endTime)
+    const char *beginTime = "00:00:00.000";
+    _mediaEditor->SetPeriod(beginTime, _mediaFormat._totaltime.c_str());
+    _mediaEditor->SetCurTime("00:00:00.000");
+    
+    //设置开始时间 结束时间 播放时间
+    _beginTime = @"00:00:00.000";
+    _endTime = [NSString stringWithCString:_mediaFormat._totaltime.c_str() encoding:[NSString defaultCStringEncoding]];
+    _curTime = @"00:00:00.000";
+    
+    // 7. 设置临时目录 (获取沙盒路径)
+    
+<<<<<<< .mine
+//    NSString* path = [NSString stringWithFormat:@"%@/VideoCache",[NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) objectAtIndex:0]];
+//
+    
+    NSString* path = [NSString stringWithCString:TMP_TMP_DIR encoding:NSUTF8StringEncoding];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        [[NSFileManager defaultManager] createDirectoryAtPath:path withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+//    _mediaEditor->SetTempDir([path UTF8String]);
+=======
+    //    NSString* path = [NSString stringWithFormat:@"%@/VideoCache",[NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) objectAtIndex:0]];
+    //
+    //    if (![[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:YES]) {
+    //        [[NSFileManager defaultManager] createDirectoryAtPath:path withIntermediateDirectories:YES attributes:nil error:nil];
+    //    }
+    //    _mediaEditor->SetTempDir([path UTF8String]);
+>>>>>>> .r191
+    
+    _mediaEditor->SetTempDir(TMP_TMP_DIR);
+    
+    // 6. 获取并画第一帧的缩略图
+    _thumBufLen = _mediaFormat._width * _mediaFormat._height * 3 / 2;
+    _thumBuf = new uint8_t[_thumBufLen];
+    _mediaEditor->GetThumbnail((char *)_thumBuf, _thumBufLen, beginTime, _mediaFormat._width, _mediaFormat._height);
+    [_openglView render :0 :_thumBuf :_mediaFormat._width: _mediaFormat._height];
+}
+
+- (void)setBeginTime:(NSString *)beginTime
+{
+    _beginTime = beginTime;
+    
+    _mediaEditor->SetPeriod([self.beginTime UTF8String], [self.endTime UTF8String]);
+}
+
+- (void)setEndTime:(NSString *)endTime
+{
+    _endTime = endTime;
+    
+    _mediaEditor->SetPeriod([self.beginTime UTF8String], [self.endTime UTF8String]);
+}
+
+- (void)setCurTime:(NSString *)curTime
+{
+    _curTime = curTime;
+    
+    [self performSelectorOnMainThread:@selector(loadThumnImgAtTime:) withObject:_curTime waitUntilDone:NO];
+}
+
+#pragma mark -
+#pragma mark playAction
+
+- (void)btnPlayClicked:(UIButton*)sender
+{
+    if (_isPlaying) {
+        [self pausePlay];
+        _isPlaying = NO;
+    } else {
+        [self startPlay];
+        _isPlaying = YES;
+    }
+}
+
+- (void)startPlay
+{
+    [_openglView setOpenglViewMode: OPENGLVIEW_DISPLAY: CGRectMake(0, 0, self.frame.size.width, self.frame.size.height)];
+    _mediaEditor->Play();       // 禁用下面的四个按钮 ？
+    _isPlaying = YES;
+    if (self.delegate && [self.delegate respondsToSelector:@selector(videoPlayingViewStartPlay)]) {
+        [self.delegate videoPlayingViewStartPlay];
+    }
+}
+
+- (void)stopPlay
+{
+    _mediaEditor->Stop();
+    _isPlaying = NO;
+    
+    [self performSelectorOnMainThread:@selector(loadThumnImgAtTime:) withObject:_beginTime waitUntilDone:NO];
+    
+    if (self.delegate && [self.delegate respondsToSelector:@selector(videoPlayingViewStopPlay)]) {
+        [self.delegate videoPlayingViewStopPlay];
+    }
+}
+
+- (void)pausePlay
+{
+    _mediaEditor->Pause();
+    _isPlaying = NO;
+    if (self.delegate && [self.delegate respondsToSelector:@selector(videoPlayingViewPausePlay)]) {
+        [self.delegate videoPlayingViewPausePlay];
+    }
+}
+
+-(void)loadThumnImgAtTime:(NSString*)time
+{
+    _mediaEditor->GetThumbnail((char *)_thumBuf, _thumBufLen, [time UTF8String], _mediaFormat._width, _mediaFormat._height);
+    [_openglView render :0 :_thumBuf :_mediaFormat._width: _mediaFormat._height];
+    _mediaEditor->SetCurTime([time UTF8String]);
+}
+
+#pragma mark -
+#pragma mark editAction
+
+- (void)cutVideo
+{
+    // 如果没有拖动过选区区域，则不裁剪
+    if ([_beginTime  isEqualToString:@"00:00:00.000"] &&
+        [_endTime  isEqualToString:[NSString stringWithUTF8String:_mediaFormat._totaltime.c_str()]])
+    {
+        printf("Info: prease drop the time control bufore cut media file ! \n");
+        return;
+    }
+    
+    string cutDestPath = "";
+    cutDestPath = cutDestPath + TMP_TMP_DIR + "/cutting.mp4";
+    _mediaEditor->Cut(cutDestPath.c_str());
+    
+}
+
+// 混音(暂时)
+- (void)addVideo
+{
+    //    string mergeDestPath = "";
+    //    mergeDestPath = mergeDestPath + TMP_TMP_DIR + "/merge.mp4";
+    //    _mediaEditor->Merge(mergeDestPath.c_str());
+    Json::Value action;
+    
+    action["Name"] = "AddAudioAction";
+    action["starttime"] = "00:00:00.000";
+    action["endtime"] = "00:00:10.000";
+    action["offset"] = "00:00:00.000";
+    
+    _mediaEditor->AddAction(action, 0);
+}
+
+// 单色滤镜
+- (void)monochromeFilter
+{
+    MonochromeFilterAction *act = [[MonochromeFilterAction alloc] init];
+    NSDictionary* dic = [SerializationAction serializationDicWithVideoAction:act];
+    NSString* name = [dic objectForKey:@"actionName"];
+    
+    Json::Value action;
+    action["Name"] = [name UTF8String];
+    
+    // 渲染当前帧
+    const char *time = [_curTime UTF8String];
+    _mediaEditor->GetThumbnail((char *)_thumBuf, _thumBufLen, time, _mediaFormat._width, _mediaFormat._height);
+    [_openglView render :1 :_thumBuf :_mediaFormat._width: _mediaFormat._height];
+    _mediaEditor->AddAction(action, 0);     // 0: 临时的
+    
+}
+
+- (void)negativeFilter
+{
+    
+    NegativeFilterAction *act = [[NegativeFilterAction alloc] init];
+    NSDictionary* dic = [SerializationAction serializationDicWithVideoAction:act];
+    NSString* name = [dic objectForKey:@"actionName"];
+    
+    Json::Value action;
+    action["Name"] = [name UTF8String];
+    
+    // 渲染当前帧
+    const char *time = [_curTime UTF8String];
+    _mediaEditor->GetThumbnail((char *)_thumBuf, _thumBufLen, time, _mediaFormat._width, _mediaFormat._height);
+    [_openglView render :2 :_thumBuf :_mediaFormat._width: _mediaFormat._height];
+    
+    _mediaEditor->AddAction(action, 0);     // 0: 临时的
+}
+
+- (BOOL)saveFileToPath:(NSString*)saveFilePath
+{
+    [_openglView setOpenglViewMode: OPENGLVIEW_TRANSFER: CGRectMake(0, 0, 568, 320)];
+    
+    //保存成功返回yes
+    saveFilePath = SAVE_FILE;
+    const char* destDir = [saveFilePath UTF8String];
+    _mediaEditor->Save2File(destDir, 568, 320);
+    return YES;
+}
+
+#pragma mark -
+#pragma mark MediaEditorCallback
+- (void)PreviewTimeCallback:(const char *)curTime
+{
+    if (self.delegate && [self.delegate respondsToSelector:@selector(videoPlayingTime:)]) {
+        [self.delegate videoPlayingTime:[NSString stringWithCString:curTime encoding:NSUTF8StringEncoding]];
+    }
+}
+
+-(void)SaveProgressCallback:(int)percentage:(int)type
+{
+    if (self.delegate && [self.delegate respondsToSelector:@selector(videoSavingPercentage::)]) {
+        [self.delegate videoSavingPercentage:percentage:type];
+    }
+    
+}
+
+/*
+ // Only override drawRect: if you perform custom drawing.
+ // An empty implementation adversely affects performance during animation.
+ - (void)drawRect:(CGRect)rect
+ {
+ // Drawing code
+ }
+ */
+
+@end

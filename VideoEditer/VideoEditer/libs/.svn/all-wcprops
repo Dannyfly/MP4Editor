@@ -1,0 +1,71 @@
+K 25
+svn:wc:ra_dav:version-url
+V 88
+/svn/stone/!svn/ver/343/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/libs
+END
+libpostproc.a
+K 25
+svn:wc:ra_dav:version-url
+V 102
+/svn/stone/!svn/ver/343/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/libs/libpostproc.a
+END
+libavfilter.a
+K 25
+svn:wc:ra_dav:version-url
+V 102
+/svn/stone/!svn/ver/343/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/libs/libavfilter.a
+END
+libvo-aacenc.a
+K 25
+svn:wc:ra_dav:version-url
+V 103
+/svn/stone/!svn/ver/343/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/libs/libvo-aacenc.a
+END
+libavformat.a
+K 25
+svn:wc:ra_dav:version-url
+V 102
+/svn/stone/!svn/ver/343/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/libs/libavformat.a
+END
+libswscale.a
+K 25
+svn:wc:ra_dav:version-url
+V 101
+/svn/stone/!svn/ver/343/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/libs/libswscale.a
+END
+libswresample.a
+K 25
+svn:wc:ra_dav:version-url
+V 104
+/svn/stone/!svn/ver/343/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/libs/libswresample.a
+END
+libyuv.a
+K 25
+svn:wc:ra_dav:version-url
+V 97
+/svn/stone/!svn/ver/343/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/libs/libyuv.a
+END
+libx264.a
+K 25
+svn:wc:ra_dav:version-url
+V 98
+/svn/stone/!svn/ver/343/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/libs/libx264.a
+END
+libavcodec.a
+K 25
+svn:wc:ra_dav:version-url
+V 101
+/svn/stone/!svn/ver/343/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/libs/libavcodec.a
+END
+libavutil.a
+K 25
+svn:wc:ra_dav:version-url
+V 100
+/svn/stone/!svn/ver/343/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/libs/libavutil.a
+END
+libavdevice.a
+K 25
+svn:wc:ra_dav:version-url
+V 102
+/svn/stone/!svn/ver/343/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/libs/libavdevice.a
+END

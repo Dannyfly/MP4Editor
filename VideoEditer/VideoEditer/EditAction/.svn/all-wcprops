@@ -1,0 +1,113 @@
+K 25
+svn:wc:ra_dav:version-url
+V 94
+/svn/stone/!svn/ver/362/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction
+END
+VideoEditTime.h
+K 25
+svn:wc:ra_dav:version-url
+V 110
+/svn/stone/!svn/ver/123/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/VideoEditTime.h
+END
+VideoEditTime.m
+K 25
+svn:wc:ra_dav:version-url
+V 110
+/svn/stone/!svn/ver/123/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/VideoEditTime.m
+END
+WatermarkFilterAction.h
+K 25
+svn:wc:ra_dav:version-url
+V 118
+/svn/stone/!svn/ver/320/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/WatermarkFilterAction.h
+END
+WatermarkFilterAction.m
+K 25
+svn:wc:ra_dav:version-url
+V 118
+/svn/stone/!svn/ver/320/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/WatermarkFilterAction.m
+END
+NegativeFilterAction.h
+K 25
+svn:wc:ra_dav:version-url
+V 117
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/NegativeFilterAction.h
+END
+BaseAction.h
+K 25
+svn:wc:ra_dav:version-url
+V 107
+/svn/stone/!svn/ver/362/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/BaseAction.h
+END
+AddAudioAction.h
+K 25
+svn:wc:ra_dav:version-url
+V 111
+/svn/stone/!svn/ver/362/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/AddAudioAction.h
+END
+MonochromeFilterAction.h
+K 25
+svn:wc:ra_dav:version-url
+V 119
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/MonochromeFilterAction.h
+END
+SerializationAction.h
+K 25
+svn:wc:ra_dav:version-url
+V 116
+/svn/stone/!svn/ver/347/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/SerializationAction.h
+END
+NegativeFilterAction.m
+K 25
+svn:wc:ra_dav:version-url
+V 117
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/NegativeFilterAction.m
+END
+BaseAction.m
+K 25
+svn:wc:ra_dav:version-url
+V 107
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/BaseAction.m
+END
+AddAudioAction.m
+K 25
+svn:wc:ra_dav:version-url
+V 111
+/svn/stone/!svn/ver/362/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/AddAudioAction.m
+END
+BaseFilterAction.h
+K 25
+svn:wc:ra_dav:version-url
+V 113
+/svn/stone/!svn/ver/340/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/BaseFilterAction.h
+END
+MonochromeFilterAction.m
+K 25
+svn:wc:ra_dav:version-url
+V 119
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/MonochromeFilterAction.m
+END
+CutVideoAction.h
+K 25
+svn:wc:ra_dav:version-url
+V 111
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/CutVideoAction.h
+END
+SerializationAction.m
+K 25
+svn:wc:ra_dav:version-url
+V 116
+/svn/stone/!svn/ver/362/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/SerializationAction.m
+END
+BaseFilterAction.m
+K 25
+svn:wc:ra_dav:version-url
+V 113
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/BaseFilterAction.m
+END
+CutVideoAction.m
+K 25
+svn:wc:ra_dav:version-url
+V 111
+/svn/stone/!svn/ver/118/trunk/sources/mediaeditor/mp4Editor/VideoEditer/VideoEditer/EditAction/CutVideoAction.m
+END

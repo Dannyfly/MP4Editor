@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VariablesViewState
+   version = "1.0">
+   <ContextStates>
+      <ContextState
+         contextName = "MP4File::GetThumbnail(unsigned char*, int, char const*, int, int):mp4_file.cpp">
+      </ContextState>
+      <ContextState
+         contextName = "+[SerializationAction serializationFloatToTime:]:SerializationAction.m">
+      </ContextState>
+      <ContextState
+         contextName = "MediaEditor::SetCurThumbnail(char const*):mediaeditor.cpp">
+      </ContextState>
+      <ContextState
+         contextName = "-[VideoTimeLineView loadTimelineImgList]:VideoTimeLineView.m">
+         <PersistentStrings>
+            <PersistentString
+               value = "(id)[0]-&gt;[0]">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "-[VideoEditViewController viewDidLoad]:VideoEditViewController.m">
+      </ContextState>
+      <ContextState
+         contextName = "-[VideoTimeLineView drawRect:]:VideoTimeLineView.m">
+      </ContextState>
+   </ContextStates>
+</VariablesViewState>

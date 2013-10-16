@@ -1,0 +1,305 @@
+//
+//  AQPlayer.cpp
+//
+//  Created by leipeilin on 13-7-29.
+//  Copyright (c) 2013年 infomedia. All rights reserved.
+//
+
+#include <iostream>
+#include <stdio.h>
+#include <string.h>
+#include "AQPlayer.h"
+
+#include <sys/time.h>
+
+using namespace std;
+
+
+/*-------------------------------- public function ------------------------------------*/
+
+AQPlayer::AQPlayer()
+    :   _curAvailableBufferCount(0),
+        _started(false),
+        _rate(0),
+        _bits(0),
+        _channel(0),
+        _playBufferByteSize(0),
+        _hasPlayed(false),
+        _bufListReadIndex(0)
+{
+    pthread_mutex_init(&_mutex, NULL);
+}
+
+AQPlayer::~AQPlayer()
+{
+//    for (int i=0; i<_playBufList.size(); i++)
+//    {
+//        if (_playBufList[i] != NULL)
+//        {
+//            free(_playBufList[i]);
+//            _playBufList[i] = NULL;
+//        }
+//    }
+    if (!_playBufList.empty())
+    {
+        _playBufList.clear();
+    }
+    
+    pthread_mutex_destroy(&_mutex);
+}
+
+void AQPlayer::Lock()
+{
+    pthread_mutex_lock(&_mutex);
+}
+
+void AQPlayer::UnLock()
+{
+    pthread_mutex_unlock(&_mutex);
+}
+
+void AQPlayer::AQPlayerInit(AQParam *aqPlayParam)
+{
+    _bits    = aqPlayParam->bits_per_sample;           // 16
+    _rate    = aqPlayParam->clock_rate;                // 44100
+    _channel = aqPlayParam->channel_count;             // 2
+    _floatFormat  = aqPlayParam->audio_float_format;
+    _packetFormat = aqPlayParam->audio_packed_format;
+    _bigEndium    = aqPlayParam->audio_bigendium_format;
+    
+    _uidname = CFSTR("AppleHDAEngineOutout:0");
+    InitAQ();
+}
+
+void AQPlayer::AQPlayerUnInit()
+{
+    AQPlayerStopPlay();
+    
+    if (_uidname != NULL)
+    {
+        CFRelease(_uidname);
+    }
+}
+
+void AQPlayer::AQPlayerStartPlay()
+{
+    _started = true;
+    _hasPlayed = true;
+    {
+        OSStatus err = AudioQueueStart(_playQueue, NULL);
+        err = AudioQueueFlush(_playQueue);
+        if (err != noErr)
+        {
+            printf("Error: in AQPlayerStartPlay() call AudioQueueStart() failed !!! \n");
+        }
+    }
+}
+
+void AQPlayer::AQPlayerPausePlay()
+{
+    _started = false;
+    {
+        OSStatus err = AudioQueuePause(_playQueue);
+        err = AudioQueueFlush(_playQueue);
+        if (err != noErr)
+        {
+            printf("Error: in AQPlayerStartPlay() call AudioQueueStart() failed !!! \n");
+        }
+    }
+}
+
+
+/*-------------------------------- private function ------------------------------------*/
+
+void AQPlayer::AQPlayerStopPlay()
+{
+    AudioQueueDispose(_playQueue, true);
+    
+    if (_hasPlayed == true)
+    {
+        AudioQueueStop(_playQueue, true);
+        _hasPlayed = false;
+        _started = false;
+    }
+        
+    // free output buffer array memory
+    int bufferIndex;
+    for (bufferIndex=0; bufferIndex<kNumberAudioOutDataBuffers; ++bufferIndex)
+    {
+        AudioQueueFreeBuffer(_playQueue, _playBuffers[bufferIndex]);
+    }
+
+}
+
+
+void AQPlayer::InitAQ()
+{
+    OSStatus aqresult;
+    
+    _writeAudioFormat.mSampleRate = _rate;                      // 采样率
+    _writeAudioFormat.mFormatID   = kAudioFormatLinearPCM;      // 线性PCM
+    if (_floatFormat)
+    {
+        _writeAudioFormat.mFormatFlags = kAudioFormatFlagIsFloat;     // 样本格式是整形还是浮点型，还是其他类型
+    }
+    else
+    {
+        _writeAudioFormat.mFormatFlags = kAudioFormatFlagIsSignedInteger;
+    }
+    
+    if (_bigEndium)
+    {
+        _writeAudioFormat.mFormatFlags |= kAudioFormatFlagIsBigEndian;
+    }
+    
+    _writeAudioFormat.mFormatFlags |= kAudioFormatFlagIsPacked;   // 样本分布是包(packet)还是平面(plane)
+    
+    _writeAudioFormat.mFramesPerPacket = 1;     // 每个包中有多少帧(一般一包就一帧)
+    _writeAudioFormat.mChannelsPerFrame= 1;     // 通道数(暂时定死为1);
+    
+    _writeAudioFormat.mBitsPerChannel  = _bits;         // 每通道，每样本所占位数(bits)
+    _writeAudioFormat.mBytesPerPacket  = _bits / 8;     // 在包中每个样本所占字节数(bytes)
+    _writeAudioFormat.mBytesPerFrame   = _bits / 8;     // 在帧中每个样本所占字节数(bytes)
+    
+    memcpy(&_deviceFormat, &_writeAudioFormat, sizeof(AudioStreamBasicDescription));
+    
+    // 计算kSecondPerBuffer秒的缓冲区大小
+//    _playBufferByteSize = kSecondPerBuffer * _deviceFormat.mSampleRate
+//    * (_deviceFormat.mBitsPerChannel / 8) * _deviceFormat.mChannelsPerFrame;    // 0.064 * 44100 * 2 * 1
+    
+    _playBufferByteSize = AAC_FRAME_SIZE * _channel * _bits / 8;
+    
+    
+    /////////// alloc buffer memory and add it to the vector ////////////////
+    for (int i=0; i<kNumberAudioOutDataBuffers; i++)
+    {
+        uint8_t *buffer = (uint8_t *)malloc(_playBufferByteSize);
+        _playBufList.push_back(buffer);
+    }   
+    
+    printf("Info: in AQPlayerStartPlay() d->_playBufferByteSize = %d", _playBufferByteSize);
+    
+    aqresult = AudioQueueNewOutput(&_deviceFormat,
+                                   AQPlayCallback, this,
+                                   NULL, NULL, 0, &_playQueue);
+    if (aqresult != noErr)
+    {
+        printf("Error: in AQPlayerStartPlay() call AudioQueueNewOutput() failed !!! err = %ld", aqresult);
+    }
+    
+    // 设置音量
+    AudioQueueSetParameter(_playQueue, kAudioQueueParam_Volume, gain_volume_out);
+    
+    // alloc the output buffer memory and put in audio queue
+    AQPlayerAllocBuffer();
+    AQPlayerBufferInQueue();
+
+}
+
+void AQPlayer::AQPlayerAllocBuffer()
+{
+    OSStatus err;
+    int bufferIndex;
+    
+    for (bufferIndex=0; bufferIndex<kAudioQueueBuffer; ++bufferIndex)
+    {
+        err = AudioQueueAllocateBuffer(_playQueue,
+                                       _playBufferByteSize,
+                                       &_playBuffers[bufferIndex]);
+        
+        
+        if (err != noErr)
+        {
+            printf("Error: call AudioQueueAllocateBuffer() failed !!!!  err = %ld", err);
+        }
+    }
+}
+
+void AQPlayer::AQPlayerBufferInQueue()
+{
+    int curPlayBuffer = 0;
+    OSStatus err;
+    
+    while (curPlayBuffer < kAudioQueueBuffer)
+    {
+        AudioQueueBufferRef curbuf = _playBuffers[curPlayBuffer];
+        curbuf->mAudioDataByteSize = _playBufferByteSize;
+        err = AudioQueueEnqueueBuffer(_playQueue,
+                                      _playBuffers[curPlayBuffer], 0, NULL);
+        if (err != noErr)
+        {
+           printf("Error: in AQPlayerPutPlayAQ() call AudioQueueEnqueueBuffer() failed !!! err= %ld", err);
+        }
+        ++curPlayBuffer;
+        printf("Info: AQPlayer Add %d Buffer to the Audio Queue Buffer ~\n", curPlayBuffer);
+    }
+}
+
+
+const char *AQPath = "/Users/leipeilin/Desktop/AQ.pcm";
+//static const char *AQPath = "/Users/leipeilin/Desktop/audiotest.pcm";
+static FILE *AQFile = NULL;
+static bool AQCreate = false;
+
+/*-------------------------------- callback function ------------------------------------*/
+
+//struct  timeval thisTime, preTime;
+
+void AQPlayCallback(void *aqData,
+                    AudioQueueRef inAQ, 
+                    AudioQueueBufferRef inBuffer)
+{
+//    gettimeofday(&thisTime, NULL);
+//    long timeuse = 1000000 * ( thisTime.tv_sec - preTime.tv_sec  ) + (thisTime.tv_usec - preTime.tv_usec );
+//    timeuse /= 1000;
+//    preTime.tv_sec = thisTime.tv_sec;
+//    preTime.tv_usec = thisTime.tv_usec;  
+//    printf("##### interval time : %ld \n", timeuse);
+    
+//    if (!AQCreate)
+//    {
+//        AQFile = fopen(AQPath, "wb");
+////        AQFile = fopen(AQPath, "rb");
+//        AQCreate = true;
+//    }
+    
+    AQPlayer *player = (AQPlayer *)aqData;
+    OSStatus err;
+//    static int bufListIndex = 0;
+    
+    if ( !player->_started )
+    {
+        return;
+    }
+        
+    player->Lock();
+    if (player->_curAvailableBufferCount > 0)
+    {
+        printf("Info: ###### player->_curAvailableBufferCount = %d \n", player->_curAvailableBufferCount);
+        memcpy(inBuffer->mAudioData, player->_playBufList[player->_bufListReadIndex], player->_playBufferByteSize);
+        player->_bufListReadIndex++;
+        player->_bufListReadIndex %= kNumberAudioOutDataBuffers;
+        player->_curAvailableBufferCount--;
+        player->UnLock();
+        
+//        fwrite(player->_playBufList[bufListIndex], 1, player->_playBufferByteSize, AQFile);
+//        fflush(AQFile);
+        
+        printf("Info: AQPlayer get frame data success ~! \n");
+    }
+    else
+    {
+        player->UnLock();
+        memset(inBuffer->mAudioData, 0, player->_playBufferByteSize); // 取不到数据，则设置为0
+        printf("Error: AQPlayer get frame data failed(has no data yet) ~! \n");
+    }
+
+    inBuffer->mAudioDataByteSize = player->_playBufferByteSize;
+    
+    err = AudioQueueEnqueueBuffer(player->_playQueue, inBuffer, 0, NULL);
+    if (err != noErr)
+    {
+        printf("Error: in AQPlayCallback() call AudioQueueEnqueueBuffer() failed ~!!! \n");
+    }
+}
+

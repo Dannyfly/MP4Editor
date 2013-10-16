@@ -1,0 +1,24 @@
+//
+// Prefix header for all source files of the 'VideoEditer' target in the 'VideoEditer' project
+//
+
+#import <Availability.h>
+
+#ifndef __IPHONE_3_0
+#warning "This project uses features only available in iOS SDK 3.0 and later."
+#endif
+
+#ifdef __OBJC__
+    #import <UIKit/UIKit.h>
+    #import <Foundation/Foundation.h>
+#endif
+
+//判断是否是IPHONE5的宏，用法是 if(IPHONE) xxxx else xxxxx
+#define IPHONE5 ([UIScreen instancesRespondToSelector:@selector(currentMode)] ? CGSizeEqualToSize(CGSizeMake(640, 1136), [[UIScreen mainScreen] currentMode].size) : NO)
+
+#define SCREEN_WIDTH [[UIScreen mainScreen] bounds].size.width
+#define SCREEN_HEIGHT [[UIScreen mainScreen] bounds].size.height
+#define SCREEN_SIZE [[UIScreen mainScreen] bounds].size
+
+//ios7
+#define IOS7 ([[[UIDevice currentDevice] systemVersion] floatValue] >= 7.0)

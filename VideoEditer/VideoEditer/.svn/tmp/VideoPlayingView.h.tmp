@@ -1,0 +1,78 @@
+//
+//  VideoPlayingView.h
+//  VideoEditer
+//
+//  Created by leipeilin on 13-8-7.
+//  Copyright (c) 2013年 liulu. All rights reserved.
+//
+
+#import <UIKit/UIKit.h>
+#import "OpenGLView.h"
+#include "mediaeditor.h"
+#include "base_opengl_view.h"
+
+//#define fang
+#ifdef fang
+#define TMP_TMP_DIR "/Users/mac/work/stone/trunk/sources/mediaeditor/testsuit/mp4editor"
+#define TMP_PALY_MP4 @"/Users/mac/work/stone/trunk/sources/mediaeditor/testsuit/mp4editor/2.mp4"
+#define SAVE_FILE @"/Users/mac/work/stone/trunk/sources/mediaeditor/testsuit/mp4editor/8.mp4"
+#else
+#define TMP_TMP_DIR [[NSString stringWithFormat:@"%@/VideoCache",[NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) objectAtIndex:0]] UTF8String]
+#define TMP_PALY_MP4 @"/Users/leipeilin/Desktop/stone/trunk/testdata/2.mp4"
+#define SAVE_FILE [NSString stringWithFormat:@"%@/VideoCache/save.mp4",[NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) objectAtIndex:0]]
+#endif
+
+
+@protocol VideoPlayingViewDelegate;
+
+@interface VideoPlayingView : UIView<MediaEditorCallback>
+{
+    OpenGLView* _openglView;        // OpenGL 视频渲染类
+//    AQPlayer*   _aqPlayer;          // AudioQueue 音频播放类
+    
+    uint8_t*    _thumBuf;           // 存储当前(_curTime)缩略图
+    int         _thumBufLen;        
+    
+    BOOL        _isPlaying;         // 播放状态
+    
+}
+
+@property (assign, nonatomic) id<VideoPlayingViewDelegate> delegate;
+
+@property (retain, nonatomic) OpenGLView* openglView;
+
+@property (strong, nonatomic) NSString* filePath;           // 源文件路径
+@property (strong, nonatomic) NSString* saveFilePath;       // 目标文件(保存)路径
+
+@property (strong, nonatomic) NSString* beginTime;
+@property (strong, nonatomic) NSString* endTime;
+@property (strong, nonatomic) NSString* curTime;
+
+//@property (assign, nonatomic) CGFloat* playingTimeValue;
+
+@property (assign, nonatomic) MediaEditor *mediaEditor;     // 媒体操作类
+@property (assign, nonatomic) MediaFormat mediaFormat;      // 媒体描述信息类
+
+- (void)startPlay;
+- (void)stopPlay;
+- (void)pausePlay;
+
+//EditAction
+- (void)cutVideo;
+- (void)addVideo;
+- (void)monochromeFilter;
+- (void)negativeFilter;
+- (BOOL)saveFileToPath:(NSString*)saveFilePath;
+
+@end
+
+@protocol VideoPlayingViewDelegate <NSObject>
+
+-(void)videoPlayingViewStartPlay;
+-(void)videoPlayingViewStopPlay;
+-(void)videoPlayingViewPausePlay;
+
+-(void)videoPlayingTime:(NSString*)time;
+-(void)videoSavingPercentage:(int)percentage :(int)type;
+
+@end
